@@ -36,8 +36,7 @@ TRADE_CONFIG = {
 }
 
 # Binance API 密钥 (需要替换为实际密钥)
-API_KEY = ""
-API_SECRET = ""
+from binance_config import API_KEY, API_SECRET, TESTNET
 
 # 日志配置
 logging.basicConfig(
@@ -61,11 +60,12 @@ class BinanceTrader:
         self.testnet = testnet
         
         # 连接Binance
-        if testnet:
+        if TESTNET:
             self.client = Client(api_key, api_secret, testnet=True)
             logger.info("🧪 使用Binance Testnet")
         else:
             self.client = Client(api_key, api_secret)
+            logger.info("🚀 使用Binance 实盘")
         
         # 账户信息
         self.positions = {}        # 当前持仓
