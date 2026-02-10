@@ -177,16 +177,16 @@ def main():
     has_errors = len(errors) > 0
     error_minutes = 0
     
-    if has_errors and error_mtime:
-        # 计算错误持续时间
-        if status['last_error_time']:
-            error_minutes = int((current_time - status['last_error_time']) / 60)
-        
-        # 更新错误开始时间（如果是新的错误周期）
-        if status['last_check_ok'] or status['last_error_time'] is None:
+    if has_errors:
+        # 有错误
+        if status['last_error_time'] is None:
+            # 第一次发现错误，记录开始时间
             status['last_error_time'] = error_mtime
+        
+        # 计算错误持续时间
+        error_minutes = int((current_time - status['last_error_time']) / 60)
     else:
-        # 无错误，重置状态
+        # 无错误，重置状态（恢复正常，重置计时器）
         status['last_error_time'] = None
     
     status['last_check_ok'] = not has_errors

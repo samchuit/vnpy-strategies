@@ -100,12 +100,38 @@ class BinanceTrader:
             self.trailing_low[symbol] = 0
             self.last_signals[symbol] = "HOLD"
     
+    def _get_server_time(self):
+        """获取 Binance 服务器时间并计算偏差"""
+        try:
+            resp = requests.get("https://fapi.binance.com/fapi/v1/time", timeout=5)
+            if resp.status_code == 200:
+                server_time = resp.json()['serverTime']
+                local_time = int(time.time() * 1000)
+                self.time_offset = server_time - local_time
+                return server_time
+        except:
+            pass
+        return None
+    
     def _request(self, method, endpoint, params=None):
-        """发送API请求 (简化版)"""
+        """发送API请求 (带时间戳同步)"""
         base_url = "https://fapi.binance.com"
         headers = {'X-MBX-APIKEY': self.api_key}
         
-        ts = int(time.time() * 1000)
+        # 获取服务器时间并补偿
+        if not hasattr(self, 'time_offset'):
+            self.time_offset = 0
+        
+        # 每100次请求重新同步时间
+        if not hasattr(self, '_request_count'):
+            self._request_count = 0
+        self._request_count += 1
+        
+        if self._request_count % 100 == 0 or self.time_offset == 0:
+            self._get_server_time()
+        
+        # 使用补偿后的时间戳
+        ts = int(time.time() * 1000) + self.time_offset
         
         if params:
             params['timestamp'] = ts
@@ -127,6 +153,10 @@ class BinanceTrader:
                 resp = requests.post(url, data=params, headers=headers, timeout=10)
             
             if resp.status_code != 200:
+                # 如果是时间戳错误，重新同步时间
+                if '-1021' in resp.text:
+                    self._get_server_time()
+                    logger.warning("⏰ 时间戳已重新同步")
                 logger.error(f"API错误: {resp.text[:100]}")
                 return None
             return resp.json()
@@ -193,6 +223,16 @@ class BinanceTrader:
         if atr == 0:
             return 0
         return abs(close - ma_trend) / atr
+    
+    def get_current_price(self, symbol):
+        """获取当前价格"""
+        try:
+            data = self._request('GET', '/fapi/v3/ticker/price', {'symbol': symbol})
+            if data and 'price' in data:
+                return float(data['price'])
+        except:
+            pass
+        return None
     
     def get_balance(self):
         """查询USDT余额"""
@@ -280,24 +320,30 @@ class BinanceTrader:
         """
         # 获取1小时数据
         klines = self.get_klines(symbol, interval='1h', limit=1000)
-        if len(klines) < 150:  # 需要足够的K线计算MA
+        if len(klines) < 151:  # 需要足够的K线计算MA (排除最后一根)
             return "HOLD", {'atr': 0}, 0
         
         cfg = TRADE_CONFIG['strategy']
         
-        # 计算各项指标
-        closes = [k['close'] for k in klines]
-        current_price = closes[-1]
+        # 使用已收盘的K线计算指标 (排除最后一根未收盘的K线)
+        # 这样与回测逻辑一致
+        closed_klines = klines[:-1]
         
-        ma_fast = self.calculate_ma(klines, cfg['ma_fast'])
-        ma_slow = self.calculate_ma(klines, cfg['ma_slow'])
-        ma_trend = self.calculate_ma(klines, cfg['ma_trend'])
-        atr = self.calculate_atr(klines, cfg['atr_period'])
+        # 使用已收盘K线的收盘价作为当前价格 (与回测一致)
+        # 不使用实时API，避免网络波动和延迟问题
+        current_price = closed_klines[-1]['close']
         
-        # 计算趋势强度
+        # 计算各项指标 (使用已收盘K线)
+        closes = [k['close'] for k in closed_klines]
+        ma_fast = self.calculate_ma(closed_klines, cfg['ma_fast'])
+        ma_slow = self.calculate_ma(closed_klines, cfg['ma_slow'])
+        ma_trend = self.calculate_ma(closed_klines, cfg['ma_trend'])
+        atr = self.calculate_atr(closed_klines, cfg['atr_period'])
+        
+        # 计算趋势强度 (实时价格 vs MA80)
         trend_strength = self.calculate_trend_strength(current_price, ma_trend, atr)
         
-        # 判断趋势
+        # 判断趋势 (用实时价格比较)
         strong_uptrend = (
             current_price > ma_trend and 
             ma_slow > ma_trend and 
