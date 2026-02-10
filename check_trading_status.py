@@ -12,8 +12,8 @@ import time
 
 # 代理配置 - 使用代理
 PROXIES = {
-    'http': 'socks5://192.168.0.78:7897',
-    'https': 'socks5://192.168.0.78:7897'
+    'http': None,
+    'https': None
 }
 
 def make_request(url, retry=2):

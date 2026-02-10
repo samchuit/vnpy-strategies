@@ -31,8 +31,8 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # 代理配置
 PROXIES = {
-    'http': 'socks5://192.168.0.78:7897',
-    'https': 'socks5://192.168.0.78:7897',
+    'http': None,
+    'https': None,
 }
 
 # 交易配置 - 最优参数 (MA15/30/80, 5年回测验证)
