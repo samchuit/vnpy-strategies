@@ -10,11 +10,8 @@ import hmac
 import hashlib
 import time
 
-# 代理配置
-PROXIES = {
-    'http': 'socks5://192.168.0.78:7897',
-    'https': 'socks5://192.168.0.78:7897',
-}
+# 代理配置 - 直接连接（不使用代理）
+PROXIES = None
 
 def get_balance():
     """获取余额"""

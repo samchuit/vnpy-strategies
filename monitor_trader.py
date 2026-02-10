@@ -48,16 +48,14 @@ def save_status(status):
 def get_pid():
     """获取进程PID"""
     try:
+        # 使用-f参数匹配完整命令行
         result = subprocess.run(
-            ['pgrep', '-fl', PYTHON_SCRIPT],
+            ['pgrep', '-f', 'binance_trader_optimized'],
             capture_output=True, text=True
         )
-        for line in result.stdout.strip().split('\n'):
-            if line and 'grep' not in line:
-                parts = line.split()
-                for part in parts:
-                    if part.isdigit():
-                        return int(part)
+        pid = result.stdout.strip()
+        if pid and pid.isdigit():
+            return int(pid)
     except:
         pass
     return None
@@ -67,6 +65,32 @@ def get_last_log_time():
     try:
         if os.path.exists(LOG_FILE):
             return os.path.getmtime(LOG_FILE)
+    except:
+        pass
+    return None
+
+def get_last_log_content():
+    """获取最后一条日志内容（跳过分隔线）"""
+    try:
+        if not os.path.exists(LOG_FILE):
+            return None
+        
+        # 读取最后3行（跳过分隔线）
+        result = subprocess.run(
+            ['tail', '-n', '3', LOG_FILE],
+            capture_output=True, text=True
+        )
+        
+        lines = result.stdout.strip().split('\n')
+        
+        # 找到最后一条非分隔线的内容
+        for line in reversed(lines):
+            line = line.strip()
+            if line and not line.strip().endswith('------'):
+                return line
+        
+        return None
+        
     except:
         pass
     return None
@@ -145,6 +169,7 @@ def main():
     pid = get_pid()
     mtime = get_last_log_time()
     errors, error_mtime = check_recent_errors()
+    last_log_content = get_last_log_content()
     
     last_time_str = datetime.fromtimestamp(mtime).strftime("%H:%M:%S") if mtime else "未知"
     time_ago = int((current_time - mtime) / 60) if mtime else 0
@@ -186,6 +211,17 @@ def main():
     print(f"PID: {pid if pid else '❌ 未运行'}")
     print(f"运行中: {'✅ 是' if pid else '❌ 否'}")
     print(f"最后日志: {last_time_str} ({time_ago}分钟前)")
+    if last_log_content:
+        # 只显示日志内容部分（去掉时间戳）
+        log_parts = last_log_content.split(' - ', 2)
+        if len(log_parts) >= 3:
+            content = log_parts[2].strip()
+            # 移除末尾的分隔线
+            if content.endswith('------'):
+                content = content[:-70].strip()
+            print(f"📝 最新日志: {content[:120]}")
+        else:
+            print(f"📝 最新日志: {last_log_content[:120]}")
     print(f"错误数量: {len(errors)}")
     
     if has_errors:
