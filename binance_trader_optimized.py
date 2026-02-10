@@ -103,14 +103,18 @@ class BinanceTrader:
     def _get_server_time(self):
         """获取 Binance 服务器时间并计算偏差"""
         try:
+            # 使用更可靠的 endpoint
             resp = requests.get("https://fapi.binance.com/fapi/v1/time", timeout=5)
             if resp.status_code == 200:
-                server_time = resp.json()['serverTime']
-                local_time = int(time.time() * 1000)
-                self.time_offset = server_time - local_time
-                return server_time
-        except:
-            pass
+                data = resp.json()
+                if 'serverTime' in data:
+                    server_time = data['serverTime']
+                    local_time = int(time.time() * 1000)
+                    self.time_offset = server_time - local_time
+                    logger.info(f"⏰ 时间戳同步: offset={self.time_offset}ms")
+                    return server_time
+        except Exception as e:
+            logger.warning(f"⏰ 时间戳同步失败: {e}")
         return None
     
     def _request(self, method, endpoint, params=None):
@@ -118,31 +122,35 @@ class BinanceTrader:
         base_url = "https://fapi.binance.com"
         headers = {'X-MBX-APIKEY': self.api_key}
         
-        # 获取服务器时间并补偿
+        # 初始化时间戳偏移
         if not hasattr(self, 'time_offset'):
             self.time_offset = 0
         
-        # 每100次请求重新同步时间
+        # 请求计数
         if not hasattr(self, '_request_count'):
             self._request_count = 0
         self._request_count += 1
         
-        if self._request_count % 100 == 0 or self.time_offset == 0:
+        # 每50次请求重新同步时间（更频繁）
+        if self._request_count % 50 == 0 or self.time_offset == 0:
             self._get_server_time()
         
         # 使用补偿后的时间戳
         ts = int(time.time() * 1000) + self.time_offset
         
+        # Binance API 要求 timestamp 必须在 recvWindow 内
+        # 默认 recvWindow = 5000ms，所以 timestamp 误差不能超过 5 秒
         if params:
             params['timestamp'] = ts
+            params['recvWindow'] = 10000  # 增加 recvWindow 到 10 秒
             # 过滤None值并排序
             params = {k: str(v) for k, v in sorted(params.items()) if v is not None}
             query_string = '&'.join([f"{k}={v}" for k, v in params.items()])
             params['signature'] = hmac.new(self.api_secret.encode('utf-8'), query_string.encode('utf-8'), hashlib.sha256).hexdigest()
         else:
-            query_string = f"timestamp={ts}"
+            query_string = f"timestamp={ts}&recvWindow=10000"
             signature = hmac.new(self.api_secret.encode('utf-8'), query_string.encode('utf-8'), hashlib.sha256).hexdigest()
-            params = {'timestamp': ts, 'signature': signature}
+            params = {'timestamp': ts, 'recvWindow': '10000', 'signature': signature}
         
         try:
             url = f"{base_url}{endpoint}"
@@ -153,12 +161,28 @@ class BinanceTrader:
                 resp = requests.post(url, data=params, headers=headers, timeout=10)
             
             if resp.status_code != 200:
-                # 如果是时间戳错误，重新同步时间
+                # 如果是时间戳错误，立即重新同步
                 if '-1021' in resp.text:
+                    logger.warning("⏰ 检测到时间戳错误，重新同步...")
                     self._get_server_time()
-                    logger.warning("⏰ 时间戳已重新同步")
-                logger.error(f"API错误: {resp.text[:100]}")
-                return None
+                    # 重新计算时间戳
+                    ts = int(time.time() * 1000) + getattr(self, 'time_offset', 0)
+                    if params:
+                        params['timestamp'] = ts
+                        params['recvWindow'] = 10000
+                        params = {k: str(v) for k, v in sorted(params.items()) if v is not None}
+                        query_string = '&'.join([f"{k}={v}" for k, v in params.items()])
+                        params['signature'] = hmac.new(self.api_secret.encode('utf-8'), query_string.encode('utf-8'), hashlib.sha256).hexdigest()
+                    
+                    # 重试一次
+                    if method == 'GET':
+                        resp = requests.get(url, params=params, headers=headers, timeout=10)
+                    else:
+                        resp = requests.post(url, data=params, headers=headers, timeout=10)
+                
+                if resp.status_code != 200:
+                    logger.error(f"API错误: {resp.text[:100]}")
+                    return None
             return resp.json()
         except Exception as e:
             logger.error(f"请求失败: {e}")

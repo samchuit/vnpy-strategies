@@ -112,10 +112,12 @@ def check_recent_errors():
         
         lines = result.stdout.strip().split('\n')
         
-        # 查找ERROR行及其时间戳
+        # 查找ERROR行及其时间戳（排除保证金不足等正常业务错误）
         errors = []
         for line in lines:
-            if 'ERROR' in line or 'Error' in line or ' error:' in line.lower():
+            # 排除 "Margin is insufficient" 等正常业务错误
+            if ('ERROR' in line or 'Error' in line or ' error:' in line.lower()) and \
+               'Margin is insufficient' not in line:
                 errors.append(line.strip())
         
         return errors, mtime
