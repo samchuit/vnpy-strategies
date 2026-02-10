@@ -76,9 +76,10 @@ class BinanceTrader:
         self.api_secret = api_secret
         self.testnet = testnet
         
-        # 创建session禁用环境变量代理
+        # 创建session并使用代理
         self.session = requests.Session()
         self.session.trust_env = False
+        self.session.proxies = PROXIES
         
         # 账户信息
         self.positions = {}            # 当前持仓
