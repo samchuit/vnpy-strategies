@@ -12,18 +12,26 @@ from datetime import datetime
 
 # 配置
 LOG_FILE = "/Users/chusungang/workspace/vnpy-strategies/binance_trader_optimized.log"
+PYTHON_SCRIPT = "binance_trader_optimized.py"
 
 def get_pid():
     """获取进程PID"""
     try:
-        result = subprocess.run(['ps', 'aux'], capture_output=True, text=True)
-        for line in result.stdout.split('\n'):
-            if 'binance_trader_optimized.py' in line and 'grep' not in line and 'python' in line:
+        # 使用pgrep代替ps aux
+        result = subprocess.run(
+            ['pgrep', '-fl', PYTHON_SCRIPT],
+            capture_output=True, text=True
+        )
+        
+        for line in result.stdout.strip().split('\n'):
+            if line and 'grep' not in line:
                 parts = line.split()
-                if len(parts) >= 2:
-                    return int(parts[1])
-    except:
-        pass
+                for part in parts:
+                    if part.isdigit():
+                        return int(part)
+    except Exception as e:
+        print(f"Error getting PID: {e}", file=sys.stderr)
+    
     return None
 
 def get_last_log_time():
@@ -81,7 +89,7 @@ def main():
         "last_log_time": last_time,
         "log_age_minutes": time_ago,
         "error_count": len(errors),
-        "errors": errors[:5] if errors else [],  # 最多显示5个错误
+        "errors": errors[:5] if errors else [],
     }
     
     # 打印状态

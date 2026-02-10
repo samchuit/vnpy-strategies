@@ -12,8 +12,8 @@ import time
 
 # 代理配置
 PROXIES = {
-    'http': 'socks5://127.0.0.1:7897',
-    'https': 'socks5://127.0.0.1:7897',
+    'http': 'socks5://192.168.0.78:7897',
+    'https': 'socks5://192.168.0.78:7897',
 }
 
 def get_balance():
