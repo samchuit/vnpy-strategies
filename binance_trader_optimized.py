@@ -37,12 +37,12 @@ PROXIES = {
 
 # 交易配置 - 最优参数 (MA15/30/80, 5年回测验证)
 TRADE_CONFIG = {
-    "capital_usdt": 10000,       # 总资金 (USDT)
+    "capital_usdt": 9000,       # 总资金 (USDT) - 调整为原来的90%
     "leverage": 2,               # 杠杆倍数
     "symbols": [
-        {"symbol": "BTCUSDT", "weight": 0.50, "stop_loss": 0.02},
-        {"symbol": "ETHUSDT", "weight": 0.30, "stop_loss": 0.02},
-        {"symbol": "SOLUSDT", "weight": 0.20, "stop_loss": 0.02},
+        {"symbol": "BTCUSDT", "weight": 0.50, "stop_loss": 0.02, "max_qty": 0.035},
+        {"symbol": "ETHUSDT", "weight": 0.30, "stop_loss": 0.02, "max_qty": 0.75},
+        {"symbol": "SOLUSDT", "weight": 0.20, "stop_loss": 0.02, "max_qty": 12.0},
     ],
     "strategy": {
         "ma_fast": 15,           # 快速MA (最优)
@@ -514,16 +514,27 @@ class BinanceTrader:
                         if signal != "HOLD":
                             logger.info(f"🔄 {symbol}: 信号 {current_signal} -> {signal}")
                             
-                            # 计算开仓数量
+                            # 计算开仓数量 (使用实际余额和配置的较小值)
                             weight = s['weight']
                             leverage = TRADE_CONFIG['leverage']
-                            capital = self.balance * leverage * weight
+                            
+                            # 目标资金 = 配置的capital_usdt * 杠杆 * 权重
+                            target_capital = TRADE_CONFIG['capital_usdt'] * leverage * weight
+                            # 可用资金 = 实际余额 * 杠杆 * 权重
+                            available_capital = self.balance * leverage * weight
+                            
+                            # 使用较小值，确保不超过实际余额
+                            capital = min(target_capital, available_capital)
                             
                             if capital < 10:
                                 logger.warning(f"  ⚠️ {symbol} 资金不足: {capital:.2f} USDT")
                                 continue
                             
                             amount = capital / current_price
+                            
+                            # 确保不超过最大仓位限制
+                            max_qty = s.get('max_qty', 999)
+                            amount = min(amount, max_qty)
                             
                             # 确保最小数量（根据币种）
                             min_amount = {
