@@ -162,7 +162,7 @@ def restart_trader():
         print("   ❌ 重启失败")
         return None
 
-def main():
+def main(report_only=False):
     """主函数"""
     status = load_status()
     current_time = time.time()
@@ -235,7 +235,7 @@ def main():
     
     # 执行重启/启动
     restart_result = None
-    if should_restart:
+    if not report_only and should_restart:
         print(f"\n⚠️  {restart_reason}，准备重启...")
         restart_result = restart_trader()
         if restart_result:
@@ -264,4 +264,5 @@ def main():
 
 if __name__ == "__main__":
     import json
-    sys.exit(main())
+    report_only = "--report-only" in sys.argv or "-r" in sys.argv
+    sys.exit(main(report_only))
