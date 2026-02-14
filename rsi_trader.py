@@ -215,6 +215,8 @@ class BinanceClient:
         """发送请求"""
         headers = {'X-MBX-APIKEY': self.api_key}
         
+        # 每次请求前同步时间
+        self._sync_time()
         ts = int(time.time() * 1000) + self.time_offset
         
         if params:
@@ -222,23 +224,22 @@ class BinanceClient:
         else:
             params = {'timestamp': ts}
         
-        params['signature'] = self._sign(params)
+        # 生成签名
+        query = '&'.join([f"{k}={v}" for k, v in sorted(params.items())])
+        signature = hmac.new(
+            self.api_secret.encode(),
+            query.encode(),
+            'sha256'
+        ).hexdigest()
+        
+        # 构造完整URL
+        url = f"{BASE_URL}{endpoint}?{query}&signature={signature}"
         
         try:
             if method == 'GET':
-                resp = self.session.get(
-                    f"{BASE_URL}{endpoint}",
-                    params=params,
-                    headers=headers,
-                    timeout=10
-                )
+                resp = self.session.get(url, headers=headers, timeout=10)
             else:
-                resp = self.session.post(
-                    f"{BASE_URL}{endpoint}",
-                    params=params,
-                    headers=headers,
-                    timeout=10
-                )
+                resp = self.session.post(url, headers=headers, timeout=10)
             
             if resp.status_code == 200:
                 return resp.json()
@@ -278,30 +279,48 @@ class BinanceClient:
     
     def buy_market(self, symbol: str, qty: float) -> Dict:
         """市价买入"""
+        precision = QTY_PRECISION.get(symbol, 3)
+        qty_str = f"{qty:.{precision}f}"
+        qty_str = qty_str.rstrip('0').rstrip('.')
+        if qty_str == '0' or qty_str == '':
+            qty_str = f"0.{'0'*(precision-1)}1"
+        
         return self._request('POST', '/fapi/v1/order', {
             'symbol': symbol,
             'side': 'BUY',
             'type': 'MARKET',
-            'quantity': f"{qty:.}"
+            'quantity': qty_str
         })
     
     def sell_market(self, symbol: str, qty: float) -> Dict:
         """市价卖出"""
+        precision = QTY_PRECISION.get(symbol, 3)
+        qty_str = f"{qty:.{precision}f}"
+        qty_str = qty_str.rstrip('0').rstrip('.')
+        if qty_str == '0' or qty_str == '':
+            qty_str = f"0.{'0'*(precision-1)}1"
+        
         return self._request('POST', '/fapi/v1/order', {
             'symbol': symbol,
             'side': 'SELL',
             'type': 'MARKET',
-            'quantity': f"{qty:.}"
+            'quantity': qty_str
         })
     
     def set_sl(self, symbol: str, qty: float, sl_price: float):
         """设置止损单"""
+        precision = QTY_PRECISION.get(symbol, 3)
+        qty_str = f"{qty:.{precision}f}"
+        qty_str = qty_str.rstrip('0').rstrip('.')
+        if qty_str == '0' or qty_str == '':
+            qty_str = f"0.{'0'*(precision-1)}1"
+        
         self._request('POST', '/fapi/v1/order', {
             'symbol': symbol,
             'side': 'SELL',
             'type': 'STOP_MARKET',
-            'quantity': f"{qty:.}",
-            'stopPrice': f"{sl_price:.}",
+            'quantity': qty_str,
+            'stopPrice': f"{sl_price:.2f}",
             'reduceOnly': 'true'
         })
 
@@ -336,10 +355,18 @@ def main():
                 if pos['amt'] == 0 and signal == "🟢 LONG":
                     precision = QTY_PRECISION.get(symbol, 3)
                     tradable = balance * POSITION_PCT * 0.8
-                    qty = round(tradable * LEVERAGE / md['price'], precision)
+                    qty = tradable * LEVERAGE / md['price']
                     
-                    if qty > 0:
-                        logger.info(f"🟢 {symbol} 开多: qty={qty}")
+                    # 确保订单金额大于100美元
+                    min_notional = 100 / md['price']
+                    qty = max(qty, min_notional)
+                    qty = round(qty, precision)
+                    
+                    # 计算订单金额用于日志
+                    notional = qty * md['price']
+                    
+                    if qty > 0 and notional >= 100:
+                        logger.info(f"🟢 {symbol} 开多: qty={qty}, 金额=${notional:.2f}")
                         client.leverage(symbol, LEVERAGE)
                         client.buy_market(symbol, qty)
                         client.set_sl(symbol, qty, md['sl_price'])
